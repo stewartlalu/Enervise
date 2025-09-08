@@ -1,0 +1,400 @@
+Energy Meter Monitoring System - Technical Documentation
+
+1. BACKEND FUNCTIONS (app.py)
+===========================
+
+Camera and Image Processing
+-------------------------
+get_camera()
+- Description: Initialize and return camera object
+- Returns: cv2.VideoCapture object or None
+Code:
+```python
+def get_camera():
+    """Initialize camera only if process is running"""
+    global camera, debug_info
+    if not process_started:
+        return None
+    if camera is None:
+        camera = cv2.VideoCapture(1)
+        if not camera.isOpened():
+            debug_info = "Failed to open camera 1, trying camera 0..."
+            camera = cv2.VideoCapture(0)
+            if not camera.isOpened():
+                debug_info = "No cameras available!"
+                return None
+    return camera
+```
+
+capture_images()
+- Description: Continuously capture and save images every 35 seconds
+- Saves both original and enhanced images
+- Creates timestamp-based filenames
+Code:
+```python
+def capture_images():
+    """Capture and save images every 35 seconds"""
+    global debug_info, next_capture_timestamp, stop_capture
+    os.makedirs('input', exist_ok=True)
+    while not stop_capture:
+        now = datetime.now()
+        next_capture_timestamp = now + timedelta(seconds=capture_interval)
+        cam = get_camera()
+        if cam is None:
+            time.sleep(5)
+            continue
+        ret, frame = cam.read()
+        if not ret:
+            debug_info = "Failed to capture frame"
+            time.sleep(1)
+            continue
+        enhanced_frame = enhance_image(frame)
+        timestamp = now.strftime('%Y%m%d_%H%M%S')
+        original_path = f'input/original_{timestamp}.jpg'
+        enhanced_path = f'input/enhanced_{timestamp}.jpg'
+        cv2.imwrite(original_path, frame)
+        cv2.imwrite(enhanced_path, enhanced_frame)
+        debug_info = f"Saved images at {timestamp}"
+        time.sleep(capture_interval)
+```
+
+process_saved_images()
+- Description: Process captured images to extract meter readings
+- Handles initial reading setup
+- Calculates consumption difference
+- Updates bill amount
+- Saves readings to database
+Code:
+```python
+def process_saved_images():
+    global last_reading, last_reading_time, debug_info, initial_reading_value
+    model = setup_gemini()
+    debug_info = "Model initialized"
+    
+    if initial_reading_value is None:
+        debug_info = "Waiting 5 seconds before taking first reading..."
+        time.sleep(5)
+        debug_info = "Ready to take first reading"
+    
+    while not stop_capture:
+        try:
+            enhanced_files = glob.glob('input/enhanced_*.jpg')
+            if not enhanced_files:
+                time.sleep(1)
+                continue
+            latest_enhanced = max(enhanced_files)
+            reading = process_image(model, latest_enhanced)
+            if reading and reading != "No KWh readings found":
+                numbers = re.findall(r'\d+\.?\d*', reading)
+                current_units = float(numbers[0])
+                
+                if initial_reading_value is None:
+                    initial_reading_value = current_units
+                    debug_info = f"Initial reading set: {initial_reading_value} KWh"
+                    continue
+                
+                difference_units = current_units - initial_reading_value
+                new_reading = f"{difference_units:.0f} KWh (Δ)"
+                bill_amount = get_bill_from_site(difference_units, phase_num)
+                save_reading(new_reading, latest_enhanced, bill_details)
+```
+
+Image Enhancement Functions
+-------------------------
+enhance_image(frame)
+- Description: Apply image enhancement techniques
+- Parameters: frame (numpy array)
+- Returns: Enhanced image frame
+
+Reading Processing Functions
+--------------------------
+process_image(model, image_path)
+- Description: Extract KWh reading from image using Gemini Vision AI
+- Parameters: 
+  - model: Gemini model instance
+  - image_path: Path to image file
+- Returns: Extracted reading or error message
+
+Bill Calculation Functions
+-------------------------
+get_bill_from_site(units, phase_type)
+- Description: Calculate electricity bill based on units and phase type
+- Parameters:
+  - units: Consumed units (float)
+  - phase_type: 1 for single-phase, 3 for three-phase
+- Returns: Calculated bill amount (float)
+
+2. DATABASE FUNCTIONS (database.py)
+================================
+
+init_db()
+- Description: Initialize SQLite database and create required tables
+- Creates tables: readings, user_settings, alerts
+Code:
+```python
+def init_db():
+    """Initialize the database and create tables"""
+    conn = sqlite3.connect('readings.db')
+    c = conn.cursor()
+    
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS readings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reading TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            image_path TEXT,
+            fixed_charge REAL,
+            energy_charge REAL,
+            tod_charge REAL,
+            duty REAL,
+            subsidy REAL,
+            total_amount REAL
+        )
+    ''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS user_settings
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  user_id TEXT,
+                  daily_cost_limit REAL)''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS alerts
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  user_id TEXT,
+                  message TEXT,
+                  type TEXT,
+                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                  is_read INTEGER DEFAULT 0)''')
+    conn.commit()
+    conn.close()
+```
+
+save_reading(reading, image_path, bill_details)
+- Description: Save meter reading and associated data
+- Parameters:
+  - reading: KWh reading value
+  - image_path: Path to saved image
+  - bill_details: Dictionary containing bill components
+Code:
+```python
+def save_reading(reading, image_path, bill_details):
+    """Save a new reading to the database"""
+    conn = sqlite3.connect('readings.db')
+    c = conn.cursor()
+    
+    if bill_details:
+        c.execute('''
+            INSERT INTO readings (
+                reading, image_path, fixed_charge, energy_charge, 
+                tod_charge, duty, subsidy, total_amount
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            reading, image_path, 
+            bill_details['fixed_charge'], bill_details['energy_charge'],
+            bill_details['tod_charge'], bill_details['duty'],
+            bill_details['subsidy'], bill_details['final']
+        ))
+    else:
+        c.execute('INSERT INTO readings (reading, image_path) VALUES (?, ?)',
+                  (reading, image_path))
+    
+    conn.commit()
+    conn.close()
+```
+
+get_readings(limit=50)
+- Description: Retrieve recent readings from database
+- Parameters:
+  - limit: Number of readings to retrieve (default: 50)
+- Returns: List of reading records
+
+save_alert(user_id, message, alert_type)
+- Description: Save user alert to database
+- Parameters:
+  - user_id: User identifier
+  - message: Alert message
+  - alert_type: Type of alert (warning/danger)
+
+3. API ENDPOINTS
+==============
+
+Camera Feed Endpoints
+-------------------
+/video_feed
+- Method: GET
+- Returns: Live camera feed stream
+
+/get_reading
+- Method: GET
+- Returns: Latest reading info (JSON)
+  {
+    reading: string,
+    timestamp: string,
+    bill_amount: float,
+    debug_info: string,
+    initial_reading: float
+  }
+
+/get_status
+- Method: GET
+- Returns: Capture timer status (JSON)
+  {
+    next_capture_in: int,
+    next_capture_time: string,
+    is_initial_delay: boolean
+  }
+
+Process Control Endpoints
+-----------------------
+/start_process
+- Method: POST
+- Description: Start reading capture process
+
+/stop_process
+- Method: POST
+- Description: Stop reading capture process
+
+/update_phase
+- Method: POST
+- Parameters: phase (single/three)
+- Updates meter phase type
+
+Dashboard Endpoints
+-----------------
+/get_dashboard_data
+- Method: GET
+- Returns: Complete dashboard statistics (JSON)
+  {
+    current_reading: string,
+    average_daily: string,
+    current_bill: float,
+    cost_limit: float,
+    limit_used_percent: float,
+    consumption_data: array,
+    peak_hours_data: array
+  }
+
+Cost Management Endpoints
+-----------------------
+/set_cost_limit
+- Method: POST
+- Parameters: cost_limit (float)
+- Sets daily cost limit
+
+/clear_cost_limit
+- Method: POST
+- Removes cost limit setting
+
+Data Management Endpoints
+-----------------------
+/clear_readings
+- Method: POST
+- Clears all readings and resets initial reading
+
+/get_readings
+- Method: GET
+- Returns: Complete reading history
+
+4. FRONTEND FUNCTIONS (JavaScript)
+===============================
+
+Dashboard Updates
+---------------
+updateDashboard()
+- Description: Update all dashboard elements
+- Updates: readings, charts, limits, alerts
+- Interval: 30 seconds
+
+updateReadingInfo()
+- Description: Update reading card information
+- Updates: current reading, timestamp, bill amount
+- Interval: 5 seconds
+
+Chart Management
+--------------
+initializeCharts()
+- Description: Set up all dashboard charts
+- Creates: limit chart, consumption chart, peak hours chart
+
+updateLimitChart(data)
+- Description: Update cost limit progress circle
+- Parameters:
+  - data: Current usage and limit data
+- Updates colors based on usage levels
+
+Event Handlers
+------------
+setCostLimit()
+- Description: Handle cost limit form submission
+- Validates and saves new limit
+- Updates UI immediately
+
+clearCostLimit()
+- Description: Handle limit clearing
+- Removes limit and updates UI
+
+updatePhase()
+- Description: Handle phase type changes
+- Updates meter phase setting
+
+5. CONFIGURATION
+==============
+
+Environment Variables
+-------------------
+GEMINI_API_KEY: API key for Gemini Vision AI
+SECRET_KEY: Flask session secret key
+
+Database Schema
+-------------
+readings:
+- id: INTEGER PRIMARY KEY
+- reading: TEXT
+- timestamp: DATETIME
+- image_path: TEXT
+- fixed_charge: REAL
+- energy_charge: REAL
+- tod_charge: REAL
+- duty: REAL
+- subsidy: REAL
+- total_amount: REAL
+
+user_settings:
+- id: INTEGER PRIMARY KEY
+- user_id: TEXT
+- daily_cost_limit: REAL
+
+alerts:
+- id: INTEGER PRIMARY KEY
+- user_id: TEXT
+- message: TEXT
+- type: TEXT
+- timestamp: DATETIME
+- is_read: INTEGER
+
+6. ERROR HANDLING
+===============
+
+Camera Errors
+-----------
+- Attempts multiple camera indices (0, 1)
+- Provides debug information for failures
+- Continues attempting to connect
+
+Reading Errors
+------------
+- Validates extracted readings
+- Handles missing or invalid readings
+- Maintains last valid reading
+- Provides detailed debug information
+
+Database Errors
+-------------
+- Transaction rollback on failures
+- Connection error handling
+- Data validation before storage
+
+Cost Limit Errors
+---------------
+- Input validation
+- Proper error messages
+- Fallback to default values 

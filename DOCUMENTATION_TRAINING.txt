@@ -1,0 +1,283 @@
+Energy Meter Monitoring System - Training and Model Documentation
+
+1. MODEL SETUP AND INITIALIZATION
+==============================
+
+Gemini Model Setup
+----------------
+setup_gemini()
+- Description: Initialize and configure Gemini Vision AI model
+- Features:
+  - API key configuration
+  - Model parameters setup
+  - Error handling
+Code:
+```python
+def setup_gemini():
+    """Initialize Gemini Vision AI model"""
+    try:
+        genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+        model = genai.GenerativeModel('gemini-pro-vision')
+        return model
+    except Exception as e:
+        logger.error(f"Failed to initialize Gemini model: {e}")
+        return None
+```
+
+2. TEXT EXTRACTION AND PROCESSING
+==============================
+
+Reading Extraction
+---------------
+process_image(model, image_path)
+- Description: Extract meter readings using Gemini Vision AI
+- Parameters:
+  - model: Initialized Gemini model
+  - image_path: Path to preprocessed image
+Code:
+```python
+def process_image(model, image_path):
+    """Extract KWh reading from meter image"""
+    try:
+        # Load and prepare image
+        image = Image.open(image_path)
+        
+        # Generate prompt for the model
+        prompt = """
+        Extract the KWh reading from this electricity meter image.
+        Return only the numeric value followed by 'KWh'.
+        Example format: '123.45 KWh'
+        """
+        
+        # Get model response
+        response = model.generate_content([prompt, image])
+        
+        # Process and validate response
+        reading = response.text.strip()
+        if not re.match(r'\d+\.?\d*\s*KWh', reading):
+            return "No KWh readings found"
+            
+        return reading
+    except Exception as e:
+        logger.error(f"Image processing error: {e}")
+        return None
+```
+
+3. BILL CALCULATION AND ANALYSIS
+=============================
+
+Bill Calculation Engine
+--------------------
+get_bill_from_site(units, phase_type)
+- Description: Calculate electricity bill based on consumption
+- Features:
+  - Phase-based calculation
+  - Slab rate implementation
+  - Additional charges calculation
+Code:
+```python
+def get_bill_from_site(units, phase_type):
+    """Calculate electricity bill"""
+    try:
+        # Base rate configuration
+        slab_rates = {
+            'single': {
+                'upto_100': 3.75,
+                'upto_200': 5.20,
+                'above_200': 6.75
+            },
+            'three': {
+                'upto_100': 4.25,
+                'upto_200': 5.70,
+                'above_200': 7.25
+            }
+        }
+        
+        phase = 'single' if phase_type == 1 else 'three'
+        rates = slab_rates[phase]
+        
+        # Calculate charges for different slabs
+        if units <= 100:
+            amount = units * rates['upto_100']
+        elif units <= 200:
+            amount = (100 * rates['upto_100'] + 
+                     (units - 100) * rates['upto_200'])
+        else:
+            amount = (100 * rates['upto_100'] + 
+                     100 * rates['upto_200'] +
+                     (units - 200) * rates['above_200'])
+        
+        # Add fixed charges
+        fixed_charge = 50 if phase_type == 1 else 90
+        total = amount + fixed_charge
+        
+        return total
+    except Exception as e:
+        logger.error(f"Bill calculation error: {e}")
+        return None
+```
+
+4. DATA ANALYSIS AND VISUALIZATION
+==============================
+
+Consumption Analysis
+-----------------
+analyze_consumption(readings)
+- Description: Analyze consumption patterns
+- Features:
+  - Peak usage detection
+  - Trend analysis
+  - Anomaly detection
+Code:
+```python
+def analyze_consumption(readings):
+    """Analyze consumption patterns"""
+    try:
+        # Convert readings to numpy array
+        values = np.array([float(r[0].split()[0]) for r in readings])
+        timestamps = [datetime.strptime(r[1], '%Y-%m-%d %H:%M:%S') 
+                     for r in readings]
+        
+        # Calculate basic statistics
+        stats = {
+            'average': np.mean(values),
+            'peak': np.max(values),
+            'std_dev': np.std(values)
+        }
+        
+        # Detect anomalies (values > 2 std dev from mean)
+        threshold = stats['average'] + 2 * stats['std_dev']
+        anomalies = values > threshold
+        
+        # Calculate peak hours (top 10% of readings)
+        peak_threshold = np.percentile(values, 90)
+        peak_hours = [t.hour for t, v in zip(timestamps, values) 
+                     if v >= peak_threshold]
+        
+        return {
+            'statistics': stats,
+            'anomalies': anomalies,
+            'peak_hours': peak_hours
+        }
+    except Exception as e:
+        logger.error(f"Analysis error: {e}")
+        return None
+```
+
+5. MODEL PERFORMANCE MONITORING
+===========================
+
+Accuracy Tracking
+---------------
+```python
+def track_model_performance(predictions, actual=None):
+    """Track model performance metrics"""
+    metrics = {
+        'total_processed': len(predictions),
+        'successful_extractions': sum(1 for p in predictions if p is not None),
+        'failed_extractions': sum(1 for p in predictions if p is None)
+    }
+    
+    if actual is not None:
+        # Calculate accuracy if ground truth is available
+        correct = sum(1 for p, a in zip(predictions, actual) 
+                     if p == a)
+        metrics['accuracy'] = correct / len(predictions)
+    
+    return metrics
+```
+
+Error Analysis
+------------
+```python
+def analyze_errors(error_logs):
+    """Analyze model errors and failures"""
+    error_types = defaultdict(int)
+    error_patterns = defaultdict(list)
+    
+    for log in error_logs:
+        error_types[log['type']] += 1
+        error_patterns[log['pattern']].append(log)
+    
+    return {
+        'error_distribution': dict(error_types),
+        'common_patterns': dict(error_patterns)
+    }
+```
+
+6. MODEL OPTIMIZATION
+==================
+
+Performance Tuning
+----------------
+```python
+def optimize_model_params(test_images, ground_truth):
+    """Optimize model parameters"""
+    best_params = {
+        'confidence_threshold': 0.0,
+        'max_retries': 0,
+        'best_accuracy': 0.0
+    }
+    
+    # Test different confidence thresholds
+    for threshold in np.arange(0.5, 0.95, 0.05):
+        for retries in range(1, 4):
+            params = {
+                'confidence_threshold': threshold,
+                'max_retries': retries
+            }
+            
+            accuracy = test_model(test_images, ground_truth, params)
+            
+            if accuracy > best_params['best_accuracy']:
+                best_params = {
+                    'confidence_threshold': threshold,
+                    'max_retries': retries,
+                    'best_accuracy': accuracy
+                }
+    
+    return best_params
+```
+
+7. TRAINING DATA MANAGEMENT
+========================
+
+Data Collection
+-------------
+```python
+def collect_training_data(image_path, reading):
+    """Collect and store training data"""
+    try:
+        # Save image copy to training dataset
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        train_path = f'training/images/img_{timestamp}.jpg'
+        shutil.copy2(image_path, train_path)
+        
+        # Save ground truth
+        with open('training/labels.csv', 'a') as f:
+            writer = csv.writer(f)
+            writer.writerow([train_path, reading])
+            
+        return True
+    except Exception as e:
+        logger.error(f"Failed to collect training data: {e}")
+        return False
+```
+
+Dataset Management
+----------------
+```python
+def manage_dataset():
+    """Manage and organize training dataset"""
+    dataset = {
+        'images_dir': 'training/images',
+        'labels_file': 'training/labels.csv',
+        'validation_split': 0.2,
+        'augmentation': {
+            'rotation_range': 10,
+            'zoom_range': 0.1,
+            'brightness_range': [0.8, 1.2]
+        }
+    }
+    return dataset
+``` 

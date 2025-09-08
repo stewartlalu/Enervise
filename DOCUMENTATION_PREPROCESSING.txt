@@ -1,0 +1,265 @@
+Energy Meter Monitoring System - Data Preprocessing Documentation
+
+1. IMAGE ACQUISITION AND PREPROCESSING
+===================================
+
+Camera Setup and Image Capture
+----------------------------
+get_camera()
+- Description: Initialize and configure camera for image acquisition
+- Returns: cv2.VideoCapture object or None
+Code:
+```python
+def get_camera():
+    """Initialize camera only if process is running"""
+    global camera, debug_info
+    if not process_started:
+        return None
+    if camera is None:
+        camera = cv2.VideoCapture(1)
+        if not camera.isOpened():
+            debug_info = "Failed to open camera 1, trying camera 0..."
+            camera = cv2.VideoCapture(0)
+            if not camera.isOpened():
+                debug_info = "No cameras available!"
+                return None
+    return camera
+```
+
+Image Capture Process
+-------------------
+capture_images()
+- Description: Automated image capture system
+- Features:
+  - 35-second interval capture
+  - Image enhancement
+  - Timestamp-based naming
+  - Error handling
+Code:
+```python
+def capture_images():
+    """Capture and save images every 35 seconds"""
+    global debug_info, next_capture_timestamp, stop_capture
+    os.makedirs('input', exist_ok=True)
+    while not stop_capture:
+        now = datetime.now()
+        next_capture_timestamp = now + timedelta(seconds=capture_interval)
+        cam = get_camera()
+        if cam is None:
+            time.sleep(5)
+            continue
+        ret, frame = cam.read()
+        if not ret:
+            debug_info = "Failed to capture frame"
+            time.sleep(1)
+            continue
+        enhanced_frame = enhance_image(frame)
+        timestamp = now.strftime('%Y%m%d_%H%M%S')
+        original_path = f'input/original_{timestamp}.jpg'
+        enhanced_path = f'input/enhanced_{timestamp}.jpg'
+        cv2.imwrite(original_path, frame)
+        cv2.imwrite(enhanced_path, enhanced_frame)
+        debug_info = f"Saved images at {timestamp}"
+        time.sleep(capture_interval)
+```
+
+2. IMAGE ENHANCEMENT
+==================
+
+Image Enhancement Pipeline
+------------------------
+enhance_image(frame)
+- Description: Multi-stage image enhancement process
+- Stages:
+  1. Grayscale conversion
+  2. Noise reduction
+  3. Contrast enhancement
+  4. Thresholding
+Code:
+```python
+def enhance_image(frame):
+    """Enhance image for better text extraction"""
+    # Convert to grayscale
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    
+    # Apply noise reduction
+    denoised = cv2.fastNlMeansDenoising(gray)
+    
+    # Enhance contrast using CLAHE
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    enhanced = clahe.apply(denoised)
+    
+    # Apply adaptive thresholding
+    thresh = cv2.adaptiveThreshold(
+        enhanced, 255, 
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+        cv2.THRESH_BINARY, 11, 2
+    )
+    
+    return thresh
+```
+
+3. DATA VALIDATION AND CLEANING
+============================
+
+Reading Validation
+----------------
+validate_reading(reading)
+- Description: Validate extracted meter readings
+- Checks:
+  1. Format validation
+  2. Range checking
+  3. Consistency with previous readings
+Code:
+```python
+def validate_reading(reading):
+    """Validate extracted meter reading"""
+    try:
+        # Extract numeric value
+        match = re.match(r'(\d+\.?\d*)\s*KWh', reading)
+        if not match:
+            return False, "Invalid reading format"
+            
+        value = float(match.group(1))
+        
+        # Range check
+        if value < 0 or value > 99999:
+            return False, "Reading out of valid range"
+            
+        # Consistency check with previous reading
+        if last_reading and value < float(last_reading):
+            return False, "Reading less than previous value"
+            
+        return True, value
+    except Exception as e:
+        return False, f"Validation error: {str(e)}"
+```
+
+4. DATA STORAGE AND ORGANIZATION
+=============================
+
+File Structure
+-------------
+```
+input/
+├── original_[timestamp].jpg    # Original captures
+├── enhanced_[timestamp].jpg    # Enhanced images
+└── archive/                    # Processed images
+
+database/
+└── readings.db                 # SQLite database
+```
+
+Database Schema (Preprocessing)
+----------------------------
+readings_raw:
+```sql
+CREATE TABLE readings_raw (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    image_path TEXT,
+    raw_reading TEXT,
+    enhanced_reading TEXT,
+    is_valid BOOLEAN,
+    validation_message TEXT
+);
+```
+
+5. ERROR HANDLING AND LOGGING
+==========================
+
+Image Capture Errors
+------------------
+```python
+def handle_capture_error(error, frame=None):
+    """Handle image capture errors"""
+    error_msg = f"Capture error: {str(error)}"
+    logger.error(error_msg)
+    
+    if frame is not None:
+        # Save problematic frame for analysis
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        error_path = f'input/errors/error_{timestamp}.jpg'
+        cv2.imwrite(error_path, frame)
+        
+    return error_msg
+```
+
+Preprocessing Validation
+----------------------
+```python
+def validate_preprocessing(image_path):
+    """Validate preprocessing results"""
+    try:
+        # Check file existence
+        if not os.path.exists(image_path):
+            raise FileNotFoundError("Image file not found")
+            
+        # Verify image can be opened
+        img = cv2.imread(image_path)
+        if img is None:
+            raise ValueError("Invalid image file")
+            
+        # Check image dimensions
+        height, width = img.shape[:2]
+        if width < 100 or height < 100:
+            raise ValueError("Image too small")
+            
+        return True, "Validation successful"
+    except Exception as e:
+        return False, str(e)
+```
+
+6. CONFIGURATION
+==============
+
+Camera Settings
+-------------
+```python
+CAMERA_CONFIG = {
+    'resolution': (1280, 720),
+    'fps': 30,
+    'auto_focus': True,
+    'brightness': 128,
+    'contrast': 128,
+    'saturation': 128
+}
+```
+
+Image Processing Parameters
+------------------------
+```python
+PREPROCESSING_CONFIG = {
+    'denoise_strength': 10,
+    'clahe_clip_limit': 2.0,
+    'clahe_grid_size': (8, 8),
+    'threshold_block_size': 11,
+    'threshold_C': 2
+}
+```
+
+7. MONITORING AND DEBUGGING
+========================
+
+Debug Information
+---------------
+```python
+def log_preprocessing_step(step_name, params):
+    """Log preprocessing step details"""
+    logger.debug(f"Preprocessing step: {step_name}")
+    logger.debug(f"Parameters: {params}")
+    logger.debug(f"Timestamp: {datetime.now()}")
+```
+
+Quality Metrics
+-------------
+```python
+def calculate_image_quality(image):
+    """Calculate image quality metrics"""
+    metrics = {
+        'brightness': np.mean(image),
+        'contrast': np.std(image),
+        'blur_score': cv2.Laplacian(image, cv2.CV_64F).var()
+    }
+    return metrics
+``` 
