@@ -29,7 +29,6 @@ A modern Flask-based web application that uses **Roboflow AI** for automated met
 - **User Profiles**: Editable user profiles and settings
 
 ### 🎨 Modern UI/UX
-- **Legal CRM Theme**: Professional, modern design
 - **Responsive Design**: Works on desktop and mobile devices
 - **Real-time Updates**: Live data updates without page refresh
 - **Toast Notifications**: User-friendly feedback system
@@ -42,7 +41,6 @@ A modern Flask-based web application that uses **Roboflow AI** for automated met
 - **Frontend**: HTML5, CSS3, JavaScript (ES6+)
 - **Charts**: Chart.js for data visualization
 - **Web Scraping**: Selenium with WebDriver Manager
-- **Deployment**: Vercel-ready configuration
 
 ## 🚀 Quick Start
 
@@ -160,8 +158,6 @@ FLASK_SECRET_KEY=your_secret_key
 1. **ChromeDriver**: WebDriver Manager handles automatic updates
 2. **Roboflow API**: Check API key and internet connectivity
 3. **Database**: Automatically created on first run
-4. **Vercel Deployment**: Ensure environment variables are set
-
 ### Debug Mode
 ```python
 app.run(debug=True)
@@ -188,8 +184,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- 📧 Email: support@enervise.com
-- 🐛 Issues: [GitHub Issues](https://github.com/yourusername/enervise/issues)
+- 📧 Email: stewartlalu@gmail.com
+- 🐛 Issues: [GitHub Issues](https://github.com/stewartlalu/enervise/issues)
 - 📖 Documentation: [Full Documentation](DEPLOYMENT.md)
 
 ---
