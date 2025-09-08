@@ -2,9 +2,6 @@
 
 A modern Flask-based web application that uses **Roboflow AI** for automated meter reading detection and real-time bill calculation. Features a beautiful Legal CRM-themed UI with comprehensive dashboard analytics.
 
-## 🚀 Live Demo
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yourusername/enervise)
 
 ## ✨ Key Features
 
