@@ -95,7 +95,6 @@ enervise/
 ├── static/                   # Static assets
 │   └── sample.mp4           # Sample video file
 ├── requirements.txt          # Python dependencies
-├── vercel.json              # Vercel deployment config
 ├── .gitignore               # Git ignore rules
 └── README.md                # This file
 ```
@@ -169,7 +168,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Roboflow**: For AI-powered meter reading detection
 - **Flask**: For the excellent web framework
 - **Chart.js**: For beautiful data visualizations
-- **Vercel**: For seamless deployment platform
 
 ## 📞 Support
 
