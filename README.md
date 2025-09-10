@@ -48,7 +48,7 @@ A modern Flask-based web application that uses **Roboflow AI** for automated met
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/enervise.git
+   git clone https://github.com/stewartlalu/enervise.git
    cd enervise
    ```
 
