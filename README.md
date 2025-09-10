@@ -78,17 +78,6 @@ A modern Flask-based web application that uses **Roboflow AI** for automated met
    - Open http://localhost:5000
    - Login: `admin@example.com` / `admin123`
 
-### Vercel Deployment
-
-1. **Fork this repository**
-2. **Connect to Vercel**
-   - Go to [vercel.com](https://vercel.com)
-   - Import your GitHub repository
-   - Add environment variables in Vercel dashboard
-
-3. **Deploy**
-   - Vercel automatically deploys your application
-   - Access at `https://your-project.vercel.app`
 
 ## 📁 Project Structure
 
